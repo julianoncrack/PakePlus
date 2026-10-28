@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>CD Collection</title>
+
+
+
+<style>
+:root { --shelf-height: 27vh; }
+* { box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; }
+body { overflow:hidden; font-family:Arial,Helvetica,sans-serif; background:#96601f; user-select:none; }
+.room { position:relative; width:100%; height:100%; min-height:300px; overflow:hidden; background-color:#96601f; background-image:url("wood.jpeg"); background-position:center center; background-size:cover; background-repeat:no-repeat; }
+.player-area { position:absolute; inset:0 0 var(--shelf-height); display:flex; align-items:center; justify-content:center; padding:25px; }
+.player { position:relative; width:min(38vw,390px); min-width:230px; aspect-ratio:1; padding:0; border:2px solid #858585; background:linear-gradient(135deg,#ededed 0%,#c7c7c7 40%,#e5e5e5 65%,#bcbcbc 100%); box-shadow:inset 2px 2px 1px #fff,inset -2px -2px 2px #999,0 5px 12px rgba(0,0,0,.18); cursor:pointer; }
+.player:hover { filter:brightness(1.04); }
+.player:focus-visible { outline:3px solid white; outline-offset:4px; }
+.player.drag-target { outline:4px dashed white; outline-offset:6px; }
+.loaded-disc { position:absolute; width:68%; height:68%; left:50%; top:50%; object-fit:contain; display:none; transform:translate(-50%,-50%); transform-origin:center center; pointer-events:none; }
+.player.has-disc .loaded-disc { display:block; animation:spin-disc 2.8s linear infinite; animation-play-state:paused; }
+.player.is-playing .loaded-disc { animation-play-state:running; }
+@keyframes spin-disc { from { transform:translate(-50%,-50%) rotate(0deg); } to { transform:translate(-50%,-50%) rotate(360deg); } }
+.player-controls { position:absolute; right:8px; bottom:8px; display:flex; gap:5px; z-index:5; }
+.control { width:32px; height:28px; padding:0; border:1px solid #888; border-radius:2px; background:linear-gradient(#fff,#c7c7c7); box-shadow:inset 1px 1px #fff; color:#222; font-size:15px; cursor:pointer; }
+.control:hover { background:linear-gradient(#fff,#dedede); }
+.control:active { background:#aaa; }
+.shelf { position:absolute; left:0; right:0; bottom:0; height:var(--shelf-height); min-height:150px; background:#dedede; border-top:2px solid #777; box-shadow:inset 0 2px 2px white; overflow:hidden; }
+.cd-strip { display:flex; align-items:flex-start; width:100%; height:100%; gap:0; padding:0; overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; scroll-behavior:smooth; scrollbar-width:thin; scrollbar-color:#777 #d3d3d3; }
+.cd-strip::-webkit-scrollbar { height:10px; }
+.cd-strip::-webkit-scrollbar-track { background:#d3d3d3; }
+.cd-strip::-webkit-scrollbar-thumb { background:linear-gradient(#999,#666); border:1px solid #555; }
+.cd-case { position:relative; display:block; flex:0 0 min(calc(var(--shelf-height) - 12px),215px); width:min(calc(var(--shelf-height) - 12px),215px); min-width:min(calc(var(--shelf-height) - 12px),215px); height:min(calc(var(--shelf-height) - 12px),215px); aspect-ratio:1 / 1; padding:0; margin:0; border:0; border-radius:0; background:transparent; box-shadow:none; cursor:grab; overflow:visible; }
+.cd-case:active { cursor:grabbing; }
+/* Keep every album thumbnail perfectly square in the bottom shelf. */
+.cd-case { flex-shrink:0; align-self:flex-start; }
+.album-art { object-fit:cover; }
+.cd-case:focus-visible { outline:2px solid #fff; outline-offset:-3px; z-index:5; }
+.album-art { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; border:0; border-radius:0; pointer-events:none; }
+.cd-case:hover .album-art { filter:brightness(.84); }
+.cd-case.is-loaded .album-art { filter:brightness(.48) grayscale(.35); }
+.cd-tooltip { position:absolute; left:50%; bottom:calc(100% + 8px); z-index:20; width:max-content; max-width:min(260px,75vw); padding:8px 12px; color:#171717; font-family:Tahoma,Verdana,sans-serif; font-size:12px; font-weight:bold; line-height:1.35; text-align:center; overflow-wrap:anywhere; background:linear-gradient(180deg,#fff9dc 0%,#f5e8ad 100%); border:1px solid #81734b; box-shadow:inset 1px 1px rgba(255,255,255,.9),2px 3px 5px rgba(0,0,0,.3); opacity:0; visibility:hidden; pointer-events:none; transform:translate(-50%,4px); transition:opacity .12s,transform .12s,visibility .12s; }
+.cd-tooltip::after { content:""; position:absolute; top:100%; left:50%; width:8px; height:8px; background:#f5e8ad; border-right:1px solid #81734b; border-bottom:1px solid #81734b; transform:translate(-50%,-50%) rotate(45deg); }
+.cd-case:hover .cd-tooltip,.cd-case:focus-visible .cd-tooltip { opacity:1; visibility:visible; transform:translate(-50%,0); }
+.drag-ghost { position:fixed; z-index:100; width:145px; height:145px; display:none; align-items:center; justify-content:center; transform:translate(-50%,-50%); pointer-events:none; background:transparent; border:0; box-shadow:0 5px 16px rgba(0,0,0,.28); }
+.drag-ghost img { display:block; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+@media(max-width:600px) { :root { --shelf-height:29vh; } .player-area { padding:15px; } .player { width:min(68vw,330px); min-width:210px; } .cd-case { flex-basis:min(calc(var(--shelf-height) - 12px),165px); width:min(calc(var(--shelf-height) - 12px),165px); min-width:min(calc(var(--shelf-height) - 12px),165px); height:min(calc(var(--shelf-height) - 12px),165px); } .drag-ghost { width:110px; height:110px; } }
+@media(prefers-reduced-motion:reduce) { .player.has-disc .loaded-disc { animation-duration:12s; } }
+</style>
+
+</head>
+
+
+
+<body>
+
+<main class="room">
+
+
+
+  <!-- CD PLAYER -->
+
+  <section class="player-area">
+
+    <div
+
+      class="player"
+
+      id="player"
+
+      role="button"
+
+      tabindex="0"
+
+      aria-label="CD player. Click to insert a selected CD when the player is empty. Use the eject button to remove a CD."
+
+    >
+
+      <img
+
+        class="loaded-disc"
+
+        id="loadedDisc"
+
+        alt=""
+
+        draggable="false"
+
+      >
+
+
+
+      <div class="player-controls">
+
+        <button
+
+          class="control"
+
+          id="playPause"
+
+          type="button"
+
+          aria-label="Play"
+
+          title="Play / Pause"
+
+        >▶</button>
+
+
+
+        <button
+
+          class="control"
+
+          id="eject"
+
+          type="button"
+
+          aria-label="Eject CD"
+
+          title="Eject CD"
+
+        >⏏</button>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+
+  <!-- SCROLLABLE COLLECTION -->
+
+  <section class="shelf" aria-label="CD collection">
+
+    <div class="cd-strip" id="cdStrip"></div>
+
+  </section>
+
+
+
+  <!-- DISC THAT FOLLOWS THE MOUSE -->
+
+  <div class="drag-ghost" id="dragGhost">
+
+    <img id="ghostImage" alt="" draggable="false">
+
+  </div>
+
+
+
+  <!-- AUDIO -->
+
+  <audio id="audio" preload="none"></audio>
+
+  <audio id="ejectSound" preload="auto"></audio>
+
+
+
+</main>
+
+
+
+<script>
+
+/* ==========================================
+
+   CUSTOMIZE YOUR CD COLLECTION HERE
+
+
+
+   album = hover name
+
+   art   = image shown in the collection
+
+   disc  = image shown while dragging and inside player
+
+   audio = music played by this CD
+
+========================================== */
+
+
+
+const cds = [
+
+  {
+
+    id: "rainbow-bridge-3",
+
+    album: "Rainbow Bridge 3",
+
+    art: "images/rb3art.jpg",
+
+    disc: "images/rb3disc.png",
+
+    audio: "audio/rb3audio.mp3"
+
+  },
+
+
+
+  {
+
+    id: "schizophrenia",
+
+    album: "Schizophrenia",
+
+    art: "images/schart.jpeg",
+
+    disc: "images/schdisc.png",
+
+    audio: "audio/schaudio.mp3"
+
+  },
+
+
+
+  {
+
+    id: "150",
+
+    album: "150",
+
+    art: "images/150art.jpeg",
+
+    disc: "images/150disc.png",
+
+    audio: "audio/150audio.mp3"
+
+  },
+
+
+
+  {
+
+    id: "unc",
+
+    album: "UNC",
+
+    art: "images/uncart.jpg",
+
+    disc: "images/uncdisc.png",
+
+    audio: "audio/uncaudio.mp3"
+
+  }
+
+];
+
+
+
+/* Put your eject sound here. */
+
+
+
+const EJECT_SOUND_PATH = "audio/eject.mp3";
+
+
+
+/* ==========================================
+
+   ELEMENTS AND STATE
+
+========================================== */
+
+
+
+const strip = document.getElementById("cdStrip");
+
+const player = document.getElementById("player");
+
+const loadedDisc = document.getElementById("loadedDisc");
+
+
+
+const dragGhost = document.getElementById("dragGhost");
+
+const ghostImage = document.getElementById("ghostImage");
+
+
+
+const audio = document.getElementById("audio");
+
+const ejectSound = document.getElementById("ejectSound");
+
+
+
+const playPause = document.getElementById("playPause");
+
+const ejectButton = document.getElementById("eject");
+
+
+
+ejectSound.src = EJECT_SOUND_PATH;
+
+
+
+let selectedCD = null;
+
+let loadedCD = null;
+
+let isPlaying = false;
+
+
+
+/* ==========================================
+
+   BUILD THE COLLECTION
+
+========================================== */
+
+
+
+function renderCDs() {
+
+  strip.replaceChildren();
+
+
+
+  cds.forEach(cd => {
+
+    const card = document.createElement("button");
+
+
+
+    card.type = "button";
+
+    card.className = "cd-case";
+
+    card.dataset.cdId = cd.id;
+
+    card.setAttribute("aria-label", cd.album);
+
+
+
+    const art = document.createElement("img");
+
+
+
+    art.className = "album-art";
+
+    art.alt = "";
+
+    art.draggable = false;
+
+    art.src = cd.art;
+
+
+
+    art.addEventListener("error", () => {
+
+      console.warn("Could not load album art:", cd.art);
+
+    });
+
+
+
+    const tooltip = document.createElement("span");
+
+
+
+    tooltip.className = "cd-tooltip";
+
+    tooltip.textContent = cd.album;
+
+
+
+    card.append(art, tooltip);
+
+
+
+    card.addEventListener("click", () => {
+
+      /* You can pick up another CD while one is playing,
+         but it cannot be inserted until the player is empty. */
+
+      if (selectedCD?.id === cd.id) {
+
+        cancelSelection();
+
+      } else {
+
+        selectCD(cd);
+
+      }
+
+    });
+
+
+
+    strip.appendChild(card);
+
+  });
+
+
+
+  updateShelf();
+
+}
+
+
+
+/* ==========================================
+
+   PICK UP A CD
+
+
+
+   The dragged image is the disc artwork.
+
+========================================== */
+
+
+
+function selectCD(cd) {
+
+  selectedCD = cd;
+
+
+
+  ghostImage.src = cd.disc;
+
+  dragGhost.style.display = "flex";
+
+
+
+  player.classList.add("drag-target");
+
+
+
+  updateShelf();
+
+}
+
+
+
+/* ==========================================
+
+   CANCEL PICKUP
+
+========================================== */
+
+
+
+function cancelSelection() {
+
+  selectedCD = null;
+
+
+
+  dragGhost.style.display = "none";
+
+  player.classList.remove("drag-target");
+
+
+
+  updateShelf();
+
+}
+
+
+
+/* ==========================================
+
+   COLLECTION VISUAL STATE
+
+========================================== */
+
+
+
+function updateShelf() {
+
+  document.querySelectorAll(".cd-case").forEach(card => {
+
+    card.classList.toggle(
+
+      "is-loaded",
+
+      Boolean(loadedCD && card.dataset.cdId === loadedCD.id)
+
+    );
+
+
+
+    card.style.opacity =
+
+      selectedCD?.id === card.dataset.cdId ? ".45" : "";
+
+  });
+
+}
+
+
+
+/* ==========================================
+
+   INSERT CD
+
+
+
+   Inserting is only possible when the player
+
+   is empty. The disc image stays centered.
+
+========================================== */
+
+
+
+function loadCD(cd) {
+
+  if (loadedCD || !selectedCD) return;
+
+
+
+  audio.pause();
+
+  audio.removeAttribute("src");
+
+  audio.load();
+
+
+
+  loadedCD = cd;
+
+  isPlaying = false;
+
+
+
+  loadedDisc.src = cd.disc;
+
+
+
+  player.classList.add("has-disc");
+
+  player.classList.remove("is-playing");
+
+
+
+  if (cd.audio) {
+
+    audio.src = cd.audio;
+
+    audio.load();
+
+  }
+
+
+
+  playPause.textContent = "▶";
+
+  playPause.setAttribute("aria-label", "Play");
+
+
+
+  cancelSelection();
+
+  // Start playing as soon as the user inserts the CD.
+  if (cd.audio) {
+    audio.play().catch(error => {
+      // A browser may block playback; the Play button remains available.
+      console.warn("Automatic playback was blocked; use the Play button:", error);
+    });
+  }
+
+}
+
+
+
+/* ==========================================
+
+   EJECT CD
+
+
+
+   Only the physical eject button removes the loaded disc.
+
+   The eject sound plays once per ejection.
+
+========================================== */
+
+
+
+function ejectCD() {
+
+  if (!loadedCD) return;
+
+
+
+  audio.pause();
+
+  audio.removeAttribute("src");
+
+  audio.load();
+
+
+
+  ejectSound.currentTime = 0;
+
+  ejectSound.play().catch(error => {
+
+    console.warn("Could not play eject sound:", error);
+
+  });
+
+
+
+  loadedCD = null;
+
+  isPlaying = false;
+
+
+
+  loadedDisc.removeAttribute("src");
+
+
+
+  player.classList.remove("has-disc", "is-playing");
+
+
+
+  playPause.textContent = "▶";
+
+  playPause.setAttribute("aria-label", "Play");
+
+
+
+  updateShelf();
+
+}
+
+
+
+/* ==========================================
+
+   PLAYER CLICK
+
+
+
+   Holding a CD + click player = insert only if empty.
+
+   Clicking the player never ejects a CD.
+
+   Use the eject button before inserting another disc.
+
+========================================== */
+
+
+
+function handlePlayerClick() {
+
+  // The player is insert-only. Ejection is controlled by the eject button.
+  if (selectedCD && !loadedCD) {
+    loadCD(selectedCD);
+  }
+}
+
+
+
+player.addEventListener("click", event => {
+
+  if (event.target.closest(".control")) return;
+
+  handlePlayerClick();
+
+});
+
+
+
+player.addEventListener("keydown", event => {
+
+  if (
+
+    event.target === player &&
+
+    (event.key === "Enter" || event.key === " ")
+
+  ) {
+
+    event.preventDefault();
+
+    handlePlayerClick();
+
+  }
+
+});
+
+
+
+/* ==========================================
+
+   PLAY / PAUSE
+
+
+
+   The disc spins only while music is playing.
+
+========================================== */
+
+
+
+playPause.addEventListener("click", async event => {
+
+  event.stopPropagation();
+
+
+
+  if (!loadedCD || !loadedCD.audio) return;
+
+
+
+  if (audio.paused) {
+
+    try {
+
+      await audio.play();
+
+    } catch (error) {
+
+      console.error("Audio playback failed:", error);
+
+    }
+
+  } else {
+
+    audio.pause();
+
+  }
+
+});
+
+
+
+audio.addEventListener("play", () => {
+
+  isPlaying = true;
+
+
+
+  player.classList.add("is-playing");
+
+
+
+  playPause.textContent = "Ⅱ";
+
+  playPause.setAttribute("aria-label", "Pause");
+
+});
+
+
+
+audio.addEventListener("pause", () => {
+
+  isPlaying = false;
+
+
+
+  player.classList.remove("is-playing");
+
+
+
+  playPause.textContent = "▶";
+
+  playPause.setAttribute("aria-label", "Play");
+
+});
+
+
+
+audio.addEventListener("ended", () => {
+
+  isPlaying = false;
+
+
+
+  player.classList.remove("is-playing");
+
+
+
+  playPause.textContent = "▶";
+
+});
+
+
+
+/* ==========================================
+
+   EJECT BUTTON
+
+========================================== */
+
+
+
+ejectButton.addEventListener("click", event => {
+
+  event.stopPropagation();
+
+  ejectCD();
+
+});
+
+
+
+/* ==========================================
+
+   MOUSE-FOLLOWING DISC
+
+========================================== */
+
+
+
+function moveGhost(x, y) {
+
+  if (!selectedCD) return;
+
+
+
+  dragGhost.style.left = x + "px";
+
+  dragGhost.style.top = y + "px";
+
+}
+
+
+
+document.addEventListener("mousemove", event => {
+
+  moveGhost(event.clientX, event.clientY);
+
+});
+
+
+
+document.addEventListener("touchmove", event => {
+
+  if (!selectedCD || !event.touches.length) return;
+
+
+
+  moveGhost(
+
+    event.touches[0].clientX,
+
+    event.touches[0].clientY
+
+  );
+
+}, { passive: true });
+
+
+
+/* Escape puts the selected disc down. */
+
+
+
+document.addEventListener("keydown", event => {
+
+  if (event.key === "Escape") {
+
+    cancelSelection();
+
+  }
+
+});
+
+
+
+/* START */
+
+
+
+renderCDs();
+
+</script>
+
+</body>
+
+</html>
